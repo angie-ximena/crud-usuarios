@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRUD con Sincronización</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #1a73e8;
+        }
+
+        .actions {
+            margin-bottom: 20px;
+            text-align: right;
+        }
+
+        .btn-sync {
+            background-color: #1a73e8;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-sync:hover {
+            background-color: #1557b0;
+        }
+
+        .form {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #dee2e6;
+        }
+
+        .form input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0 15px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+
+        .form button {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .form button:hover {
+            background: #218838;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+
+        .btn-edit, .btn-delete {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+
+        .btn-edit {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestión de Usuarios</h1>
+        
+        <div class="actions">
+            <button id="syncButton" class="btn-sync">
+                Sincronizar con Base de Datos
+            </button>
+        </div>
+
+        <div id="statusMessage" class="status"></div>
+        
+        <form id="userForm" class="form">
+            <input type="hidden" id="userId">
+            <div>
+                <label for="name">Nombre:</label>
+                <input type="text" id="name" required placeholder="Ingrese el nombre">
+            </div>
+            <div>
+                <label for="email">Gmail:</label>
+                <input type="email" id="email" required placeholder="Ingrese el correo Gmail">
+            </div>
+            <button type="submit">Guardar Usuario</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Gmail</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="userTableBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // Variables globales
+        let editMode = false;
+        let localUsers = [];
+        const form = document.getElementById('userForm');
+        const nameInput = document.getElementById('name');
+        const emailInput = document.getElementById('email');
+        const userIdInput = document.getElementById('userId');
+        const tableBody = document.getElementById('userTableBody');
+        const syncButton = document.getElementById('syncButton');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // Cargar datos almacenados localmente
+        loadLocalData();
+
+        // Event Listeners
+        form.addEventListener('submit', handleSubmit);
+        syncButton.addEventListener('click', syncWithDatabase);
+
+        // Funciones principales
+        function handleSubmit(e) {
+            e.preventDefault();
+            
+            const userData = {
+                name: nameInput.value,
+                email: emailInput.value,
+                synced: false
+            };
+
+            if (editMode) {
+                updateLocalUser(userIdInput.value, userData);
+            } else {
+                createLocalUser(userData);
+            }
+
+            form.reset();
+            editMode = false;
+            displayLocalUsers();
+        }
+
+        function loadLocalData() {
+            const savedUsers = localStorage.getItem('users');
+            localUsers = savedUsers ? JSON.parse(savedUsers) : [];
+            displayLocalUsers();
+        }
+
+        function saveLocalData() {
+            localStorage.setItem('users', JSON.stringify(localUsers));
+        }
+
+        function displayLocalUsers() {
+            tableBody.innerHTML = '';
+            localUsers.forEach(user => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${user.id}</td>
+                    <td>${user.name}</td>
+                    <td>${user.email}</td>
+                    <td>${user.synced ? '✓ Sincronizado' : '⟳ Pendiente'}</td>
+                    <td>
+                        <button class="btn-edit" onclick="editLocalUser(${user.id})">
+                            Editar
+                        </button>
+                        <button class="btn-delete" onclick="deleteLocalUser(${user.id})">
+                            Eliminar
+                        </button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function createLocalUser(userData) {
+            const newId = localUsers.length > 0 ? Math.max(...localUsers.map(u => u.id)) + 1 : 1;
+            localUsers.push({ ...userData, id: newId });
+            saveLocalData();
+            showStatus('Usuario guardado localmente', 'success');
+        }
+
+        function editLocalUser(id) {
+            const user = localUsers.find(u => u.id === id);
+            if (user) {
+                editMode = true;
+                userIdInput.value = user.id;
+                nameInput.value = user.name;
+                emailInput.value = user.email;
+            }
+        }
+
+        function updateLocalUser(id, userData) {
+            const index = localUsers.findIndex(u => u.id === parseInt(id));
+            if (index !== -1) {
+                localUsers[index] = { ...userData, id: parseInt(id), synced: false };
+                saveLocalData();
+                showStatus('Usuario actualizado localmente', 'success');
+            }
+        }
+
+        function deleteLocalUser(id) {
+            if (confirm('¿Está seguro de eliminar este usuario?')) {
+                localUsers = localUsers.filter(u => u.id !== id);
+                saveLocalData();
+                displayLocalUsers();
+                showStatus('Usuario eliminado localmente', 'success');
+            }
+        }
+
+        async function syncWithDatabase() {
+            try {
+                showStatus('Sincronizando...', 'success');
+                
+                const unsynced = localUsers.filter(u => !u.synced);
+                
+                for (const user of unsynced) {
+                    const response = await fetch('http://localhost:3000/api/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: user.name,
+                            email: user.email
+                        })
+                    });
+
+                    if (response.ok) {
+                        const index = localUsers.findIndex(u => u.id === user.id);
+                        localUsers[index].synced = true;
+                    }
+                }
+
+                saveLocalData();
+                displayLocalUsers();
+                showStatus('Sincronización completada', 'success');
+            } catch (error) {
+                showStatus('Error en la sincronización: ' + error.message, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.style.display = 'block';
+            setTimeout(() => {
+                statusMessage.style.display = 'none';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
